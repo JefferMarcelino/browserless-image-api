@@ -1,14 +1,13 @@
 package main
 
 import (
-	"browserless-image-api/config"
-	"browserless-image-api/internal/scrapers"
 	"context"
 	"fmt"
+	"image-api/config"
+	"image-api/internal/fetcher"
 	"log"
 	"os"
 	"strconv"
-	"time"
 
 	"github.com/gofiber/fiber/v2"
 )
@@ -17,7 +16,9 @@ func main() {
 	config.LoadEnv()
 	app := fiber.New()
 
-	scraper := scrapers.YandexScraper{}
+	rot := fetcher.NewApiRotator([]string{
+		os.Getenv("SERP_KEY1"),
+	})
 
 	app.Get("/image", func(c *fiber.Ctx) error {
 		q := c.Query("q")
@@ -30,17 +31,16 @@ func main() {
 			max = 5
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
-		defer cancel()
+		ctx := context.Background()
 
-		images, err := scraper.SearchImages(ctx, q, max)
+		imgs, err := fetcher.SearchImages(ctx, rot, q, max)
 		if err != nil {
-			return c.Status(500).SendString(err.Error())
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
 		}
 
 		return c.JSON(fiber.Map{
 			"query":  q,
-			"images": images,
+			"images": imgs,
 		})
 	})
 
