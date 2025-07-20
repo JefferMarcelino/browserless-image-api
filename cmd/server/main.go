@@ -30,7 +30,7 @@ func main() {
 			max = 5
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 		defer cancel()
 
 		images, err := scraper.SearchImages(ctx, q, max)

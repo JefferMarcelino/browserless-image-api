@@ -15,7 +15,7 @@ type YandexScraper struct{}
 
 func (y YandexScraper) SearchImages(ctx context.Context, query string, max int) ([]string, error) {
 	searchURL := fmt.Sprintf("https://yandex.com/images/search?text=%s", url.QueryEscape(query))
-	html, err := fetcher.FetchContent(ctx, searchURL)
+	html, err := fetcher.FetchContentStealth(ctx, searchURL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch search page: %w", err)
 	}

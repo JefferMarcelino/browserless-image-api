@@ -10,24 +10,43 @@ import (
 	"os"
 )
 
-func FetchContent(ctx context.Context, pageURL string) (string, error) {
+type bqlResp struct {
+	Data struct {
+		HTML struct {
+			HTML string `json:"html"`
+		} `json:"html"`
+		Verify struct {
+			Found  bool `json:"found"`
+			Solved bool `json:"solved"`
+			Time   int  `json:"time"`
+		} `json:"verify"`
+	} `json:"data"`
+	Errors []struct {
+		Message string `json:"message"`
+	} `json:"errors"`
+}
+
+func FetchContentStealth(ctx context.Context, pageURL string) (string, error) {
 	payload := map[string]any{
-		"url":         pageURL,
-		"gotoOptions": map[string]any{"waitUntil": "networkidle0"},
-		"waitForSelector": map[string]any{
-			"selector": "body",
-			"timeout":  10000,
-		},
-		"bestAttempt": true,
+		"query": fmt.Sprintf(`
+      mutation FetchAndBypass {
+        goto(url: "%s", waitUntil: networkIdle) { status }
+        html { html }
+      }
+    `, pageURL),
+		"variables":     map[string]any{},
+		"operationName": "FetchAndBypass",
 	}
-	body, _ := json.Marshal(payload)
 
-	fullURL := fmt.Sprintf("%s/content?token=%s",
-		os.Getenv("BROWSERLESS_URL"),
-		os.Getenv("BROWSERLESS_TOKEN"),
+	bodyBytes, _ := json.Marshal(payload)
+	req, _ := http.NewRequestWithContext(ctx, "POST",
+		fmt.Sprintf(
+			"%s/chrome/bql?token=%s&proxy=residential&proxySticky=true&proxyCountry=mz&humanlike=true&blockConsentModals=true",
+			os.Getenv("BROWSERLESS_URL"),
+			os.Getenv("BROWSERLESS_TOKEN"),
+		),
+		bytes.NewReader(bodyBytes),
 	)
-
-	req, _ := http.NewRequestWithContext(ctx, "POST", fullURL, bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := http.DefaultClient.Do(req)
@@ -35,12 +54,18 @@ func FetchContent(ctx context.Context, pageURL string) (string, error) {
 		return "", err
 	}
 	defer resp.Body.Close()
+	b, _ := io.ReadAll(resp.Body)
 
-	if resp.StatusCode != http.StatusOK {
-		b, _ := io.ReadAll(resp.Body)
-		return "", fmt.Errorf("browserless error: %s", string(b))
+	var r bqlResp
+	if err := json.Unmarshal(b, &r); err != nil {
+		return "", fmt.Errorf("JSON unmarshal failed: %w", err)
+	}
+	if len(r.Errors) > 0 {
+		return "", fmt.Errorf("BQL error: %s", r.Errors[0].Message)
+	}
+	if r.Data.Verify.Found && !r.Data.Verify.Solved {
+		return "", fmt.Errorf("cloudflare challenge detected but not solved")
 	}
 
-	data, err := io.ReadAll(resp.Body)
-	return string(data), err
+	return r.Data.HTML.HTML, nil
 }
